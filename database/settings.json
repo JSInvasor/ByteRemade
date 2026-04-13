@@ -1,0 +1,9 @@
+{
+  "globalStopAll": true,
+  "globalUserCommand": false,
+  "rootUser": "",
+  "fileLogs": true,
+  "logIPs": true,
+  "MaxGlobalSlots": 3,
+  "BotsPassword": "fewgjh48iw3hg5uh"
+}

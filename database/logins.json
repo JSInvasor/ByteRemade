@@ -1,0 +1,15 @@
+[
+  {
+    "user": "",
+    "pass": "",
+    "maxTime": 3600,
+    "maxBots": 6000,
+    "maxSlots": 2,
+    "isAdmin": true,
+    "dailyLimit": 100,
+    "dailyUsed": 9,
+    "lastResetDate": "2025-10-26",
+    "apiAccess": false,
+    "apiKey": ""
+  }
+]

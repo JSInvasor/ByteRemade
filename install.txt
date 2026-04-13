@@ -1,0 +1,7 @@
+chmod 777 package.sh
+source ./package.sh
+
+chmod 777 build.sh
+./build.sh
+
+screen ./server 54128 30 999
